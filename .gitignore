@@ -1,0 +1,16 @@
+# Classes compilées
+out/
+*.class
+
+# IntelliJ
+.idea/
+*.iml
+
+# Fichiers auxiliaires LaTeX
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk

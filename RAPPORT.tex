@@ -1,0 +1,568 @@
+% Compilation : xelatex RAPPORT.tex   (deux fois pour la table des matieres)
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{fontspec}
+\usepackage{polyglossia}
+\setdefaultlanguage{french}
+\usepackage{geometry}
+\geometry{margin=2.3cm}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+
+% ---------- Couleurs ----------
+\definecolor{codebg}{RGB}{245,245,245}
+\definecolor{codeframe}{RGB}{210,210,210}
+\definecolor{kw}{RGB}{0,0,160}
+\definecolor{cmt}{RGB}{0,128,0}
+\definecolor{str}{RGB}{163,21,21}
+\definecolor{insa}{RGB}{200,16,46}
+
+% ---------- Style du code Java ----------
+\lstdefinestyle{java}{
+  language=Java,
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{kw}\bfseries,
+  commentstyle=\color{cmt}\itshape,
+  stringstyle=\color{str},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=8pt,
+  frame=single,
+  rulecolor=\color{codeframe},
+  breaklines=true,
+  showstringspaces=false,
+  tabsize=4,
+  extendedchars=true,
+  columns=fullflexible,
+  keepspaces=true,
+  literate={é}{{\'e}}1 {è}{{\`e}}1 {ê}{{\^e}}1 {à}{{\`a}}1 {â}{{\^a}}1
+           {î}{{\^i}}1 {ô}{{\^o}}1 {û}{{\^u}}1 {ù}{{\`u}}1 {ç}{{\c c}}1
+           {É}{{\'E}}1 {È}{{\`E}}1 {Ê}{{\^E}}1 {À}{{\`A}}1 {«}{{«}}1 {»}{{»}}1
+}
+\lstset{style=java}
+
+% ---------- En-tete / pied ----------
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small TD 3 — Programmation concurrente en Java}
+\rhead{\small STI 4A-FISE 2026/2027}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ---------- Macro captures d'ecran ----------
+% Insere captures/<fichier> s'il existe, sinon un cadre "a inserer".
+\newcommand{\capture}[2]{%
+  \begin{figure}[H]\centering
+  \IfFileExists{captures/#1}{%
+    \includegraphics[width=0.85\textwidth]{captures/#1}%
+  }{%
+    \fbox{\parbox[c][3.2cm][c]{0.85\textwidth}{\centering\itshape
+      \color{gray} Capture d'écran à insérer : \texttt{captures/#1}}}%
+  }%
+  \caption{#2}
+  \end{figure}%
+}
+
+\begin{document}
+
+% ================= PAGE DE TITRE =================
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\color{insa}\rule{\textwidth}{2pt}}\\[0.6cm]
+{\Huge\bfseries TD 3\par}
+\vspace{0.4cm}
+{\LARGE Programmation Concurrente en Java\par}
+\vspace{0.3cm}
+{\large Programmation Java Avancée : POO et JVM\par}
+{\color{insa}\rule{\textwidth}{2pt}}\\[1.5cm]
+
+{\large\itshape Rapport de travaux pratiques\par}
+\vspace{2cm}
+
+\begin{tabular}{rl}
+\textbf{Module} & STI 4A-FISE 2026/2027\\[4pt]
+\textbf{Enseignante} & Dr. Nadia Badri Fettah\\[4pt]
+\textbf{Durée} & 1h20\\[4pt]
+\textbf{Code source} & \url{https://github.com/JamaiAli/td3java}\\
+\end{tabular}
+
+\vfill
+{\large \today\par}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ================= OBJECTIFS =================
+\section*{Objectifs du TD}
+\addcontentsline{toc}{section}{Objectifs du TD}
+\begin{itemize}[nosep]
+  \item Créer et démarrer des threads avec \texttt{Runnable} et avec \texttt{extends Thread}.
+  \item Observer le cycle de vie d'un thread (\texttt{getState}, \texttt{sleep}, \texttt{join}, \texttt{daemon}).
+  \item Mettre en évidence une \emph{race condition} et la corriger avec \texttt{synchronized}.
+  \item Utiliser \texttt{volatile}, \texttt{AtomicInteger}, \texttt{ExecutorService}, \texttt{Callable} et \texttt{Future}.
+  \item Synchroniser le départ de plusieurs threads avec \texttt{wait()} et \texttt{notifyAll()}.
+\end{itemize}
+
+\begin{quote}\small\itshape
+Chaque capture d'écran provient d'une exécution réelle du programme dans IntelliJ
+IDEA ; les valeurs citées dans le texte (durées, tailles, résultats) correspondent à
+ces exécutions. Comme l'ordre d'exécution des threads varie, les valeurs exactes
+peuvent différer d'une exécution à l'autre.
+\end{quote}
+
+% ================= EXERCICE 1 =================
+\section{Téléchargements : séquentiel ou parallèle ?}
+On simule 3 téléchargements : \texttt{photo.jpg} (2\,s), \texttt{video.mp4} (3\,s)
+et \texttt{cours.pdf} (1\,s). Un « téléchargement » est une simple attente avec
+\texttt{sleep()}.
+
+\subsection{Question 1.1 — La tâche (\texttt{Telechargement.java})}
+\begin{lstlisting}
+public class Telechargement implements Runnable {
+    private String fichier;
+    private int secondes;
+
+    public Telechargement(String fichier, int secondes) {
+        this.fichier = fichier;
+        this.secondes = secondes;
+    }
+
+    public void run() {
+        String qui = Thread.currentThread().getName();
+        System.out.println(qui + " commence " + fichier);
+        for (int i = 1; i <= secondes; i++) {
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) { }
+            System.out.println("   " + fichier + " : " + (i * 100 / secondes) + " %");
+        }
+        System.out.println(qui + " a terminé " + fichier);
+    }
+}
+\end{lstlisting}
+
+\subsection{Question 1.2 — Version séquentielle}
+On appelle \texttt{run()} directement : tout est exécuté par le thread \texttt{main},
+les fichiers se téléchargent l'un après l'autre. \textbf{Durée $\approx$ 6000\,ms
+(2 + 3 + 1).}
+\begin{lstlisting}
+d1.run();
+d2.run();
+d3.run();
+\end{lstlisting}
+
+\subsection{Question 1.3 — Version parallèle (\texttt{Navigateur.java})}
+On crée un thread par téléchargement, on les démarre avec \texttt{start()}, puis on
+attend leur fin avec \texttt{join()}.
+\begin{lstlisting}
+Thread t1 = new Thread(d1, "DL-1");
+Thread t2 = new Thread(d2, "DL-2");
+Thread t3 = new Thread(d3, "DL-3");
+
+t1.start(); t2.start(); t3.start();
+t1.join();  t2.join();  t3.join();
+\end{lstlisting}
+À l'exécution (voir capture), les pourcentages des trois fichiers sont mélangés et
+la durée totale est $\approx$ \textbf{3000\,ms} (le plus long des trois), contre
+$\approx$ 6000\,ms en séquentiel.
+
+\capture{ex1.png}{Exécution parallèle de \texttt{Navigateur} — durée $\approx$ 3000\,ms}
+
+\subsection{Question 1.4 — Sans \texttt{join()}}
+Si on met les trois \texttt{join()} en commentaire, la durée affichée tombe à
+$\approx$ 0\,ms. C'est \textbf{faux} : le \texttt{main} n'attend plus la fin des
+téléchargements, il calcule la durée immédiatement après avoir lancé les threads.
+
+\subsection{Question 1.5 — Tableau comparatif}
+\begin{table}[H]\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Version} & \textbf{Durée mesurée (ms)} & \textbf{Thread qui exécute} \\
+\midrule
+Séquentielle (\texttt{run()}) & $\approx$ 6000 & \texttt{main} \\
+Parallèle (\texttt{start()}+\texttt{join()}) & $\approx$ 3008 & \texttt{DL-1}, \texttt{DL-2}, \texttt{DL-3} \\
+\bottomrule
+\end{tabular}
+\end{table}
+\textbf{Pourquoi la version parallèle est-elle plus rapide, même sur un seul cœur ?}
+Parce que pendant un \texttt{sleep()}, un thread \textbf{n'utilise pas le
+processeur}. Les trois attentes se déroulent en même temps au lieu de s'additionner,
+d'où une durée égale au plus long ($\approx$ 3\,s) et non à leur somme ($\approx$ 6\,s).
+
+% ================= EXERCICE 2 =================
+\section{Cycle de vie : sleep, join, getState, daemon}
+
+\subsection{Question 2.1 — Afficher les états (\texttt{Etats.java})}
+\begin{lstlisting}
+System.out.println("1. " + t.getState()); // avant start()  -> NEW
+t.start();
+System.out.println("2. " + t.getState()); // juste après start() -> RUNNABLE
+Thread.sleep(200);
+System.out.println("3. " + t.getState()); // t dort -> TIMED_WAITING
+t.join();
+System.out.println("4. " + t.getState()); // après fin -> TERMINATED
+\end{lstlisting}
+À l'exécution, les états s'enchaînent dans l'ordre attendu :
+\texttt{NEW} $\rightarrow$ \texttt{RUNNABLE} $\rightarrow$ \texttt{TIMED\_WAITING}
+$\rightarrow$ \texttt{TERMINATED} (voir capture).
+
+\capture{ex2.png}{États successifs du thread (NEW, RUNNABLE, TIMED\_WAITING, TERMINATED)}
+
+\subsection{Question 2.2 — Le rôle de \texttt{join()}}
+Si on commente le \texttt{join()} juste avant la ligne 4, celle-ci peut afficher
+\textbf{\texttt{TIMED\_WAITING}} (le thread dort encore) au lieu de
+\texttt{TERMINATED}. \texttt{join()} \textbf{bloque le thread appelant jusqu'à ce que
+le thread visé soit réellement terminé.}
+
+\subsection{Question 2.3 — Redémarrer un thread terminé}
+Ajouter \texttt{t.start();} à la fin du \texttt{main} lève
+\texttt{java.lang.IllegalThreadStateException} : \textbf{un thread ne peut être
+démarré qu'une seule fois}. Une fois \texttt{TERMINATED}, il faut créer un nouvel
+objet \texttt{Thread}.
+
+\subsection{Question 2.4 — Le thread daemon (\texttt{Horloge.java})}
+\begin{itemize}[nosep]
+  \item \textbf{Étape a} (sans \texttt{setDaemon}) : la boucle \texttt{while(true)}
+  ne s'arrête jamais ; il faut \texttt{Ctrl + C}.
+  \item \textbf{Étape b} (\texttt{t.setDaemon(true);} \emph{avant} \texttt{start()}) :
+  $\sim$4 lignes \texttt{Tic}, puis \texttt{Fin du main}, puis arrêt automatique.
+  Quand il ne reste que des threads daemon, la JVM se termine.
+  \item \textbf{Étape c} (\texttt{setDaemon(true)} \emph{après} \texttt{start()}) :
+  lève \texttt{IllegalThreadStateException}.
+\end{itemize}
+
+\capture{ex2b.png}{Horloge daemon : arrêt après « Fin du main »}
+
+% ================= EXERCICE 3 =================
+\section{Une ArrayList partagée qui perd des éléments}
+
+\subsection{Question 3.1 — Le bug}
+Deux threads ajoutent chacun 10\,000 entiers dans la même \texttt{ArrayList} non
+protégée (taille attendue 20000). On obtient des tailles \textbf{inférieures à
+20000} et parfois une \texttt{ArrayIndexOutOfBoundsException}.
+\begin{table}[H]\centering
+\begin{tabular}{ccc}
+\toprule
+\textbf{Exécution} & \textbf{Taille obtenue} & \textbf{Exception ?} \\
+\midrule
+1 (capture) & 12706 & non \\
+2 & 11285 & non \\
+3 & 10000 & oui (AIOOBE) \\
+4 & 11442 & non \\
+5 & 10004 & oui (AIOOBE) \\
+\bottomrule
+\end{tabular}
+\end{table}
+Les valeurs varient à chaque exécution (l'exécution 1 est celle de la capture). On
+n'obtient jamais 20000, et une \texttt{ArrayIndexOutOfBoundsException} apparaît par
+moments. \emph{Si vous obtenez toujours 20000, remplacez \texttt{10\_000} par
+\texttt{100\_000} (taille attendue 200000).}
+
+\capture{ex3.png}{Taille < 20000 et/ou ArrayIndexOutOfBoundsException}
+
+\subsection{Question 3.2 — Comprendre}
+\texttt{liste.add(x)} fait deux choses : (1) ranger \texttt{x} dans la case n°
+\texttt{size} ; (2) \texttt{size++}. Ces étapes n'étant pas atomiques, deux threads
+peuvent lire la \textbf{même} valeur de \texttt{size}, écrire dans la \textbf{même}
+case (l'un écrase l'autre → élément perdu), puis incrémenter \texttt{size} deux fois
+→ taille incohérente et case « vide » → exception.
+
+\subsection{Question 3.3 — Correction n°1 : un bloc \texttt{synchronized}}
+\begin{lstlisting}
+synchronized (liste) {
+    liste.add(i);
+}
+\end{lstlisting}
+\textbf{Résultat :} \texttt{Taille obtenue : 20000} à chaque exécution, sans
+exception (résultat attendu). On verrouille la \textbf{ressource partagée elle-même}
+car le \texttt{main} est \texttt{static} (pas de \texttt{this}).
+
+\subsection{Question 3.4 — Correction n°2 : une liste synchronisée}
+\begin{lstlisting}
+import java.util.Collections;
+List<Integer> liste = Collections.synchronizedList(new ArrayList<>());
+\end{lstlisting}
+Chaque méthode (\texttt{add}, \texttt{size}, \texttt{get}…) est déjà
+\texttt{synchronized}. Résultat : 20000 à chaque fois.
+
+\subsection{Question 3.5 — Réflexion}
+\begin{lstlisting}
+if (!liste.contains(42)) {
+    liste.add(42);
+}
+\end{lstlisting}
+\textbf{Peut-on obtenir deux fois 42 ?} \textbf{Oui.} Chaque appel est protégé
+individuellement, mais \textbf{pas l'ensemble « vérifier puis ajouter »}. Deux threads
+peuvent évaluer \texttt{contains(42)} à \texttt{false} avant qu'aucun n'ait ajouté.
+\textbf{Correction :} rendre le bloc composé atomique.
+\begin{lstlisting}
+synchronized (liste) {
+    if (!liste.contains(42)) {
+        liste.add(42);
+    }
+}
+\end{lstlisting}
+
+% ================= EXERCICE 4 =================
+\section{Bloc \texttt{synchronized} et verrous distincts}
+
+\subsection{Question 4.1 — Deux ressources, un seul verrou}
+Avec \texttt{public synchronized void ...}, le verrou est \textbf{l'objet \texttt{b}
+tout entier} : \texttt{ajouterLivre} et \texttt{ajouterLecteur} ne peuvent pas
+s'exécuter en même temps. \textbf{Durée $\approx$ 2000\,ms} (20 appels × 100\,ms en
+série). Les deux ressources sont indépendantes, pourtant \texttt{t2} attend
+\texttt{t1} inutilement.
+
+\subsection{Question 4.2 — Un verrou par ressource}
+\begin{lstlisting}
+public void ajouterLivre(String titre) {
+    synchronized (livres) { livres.add(titre); }
+    pause();                       // hors du bloc
+}
+public void ajouterLecteur(String nom) {
+    synchronized (lecteurs) { lecteurs.add(nom); }
+    pause();
+}
+\end{lstlisting}
+À l'exécution, la durée tombe à \texttt{Durée : 1010 ms} $\approx$ \textbf{1000\,ms}
+(voir capture), contre $\approx$ 2000\,ms avec un verrou unique : les deux threads
+avancent maintenant en parallèle (verrous distincts).
+
+\capture{ex4.png}{Durée $\approx$ 1000\,ms avec un verrou par ressource}
+
+\subsection{Question 4.3 — Réflexion}
+On laisse \texttt{pause()} hors de la section critique car garder un verrou pendant
+une opération longue bloquerait inutilement les autres threads ; on ne verrouille que
+la modification réellement partagée (l'ajout dans la liste).
+
+% ================= EXERCICE 5 =================
+\section{\texttt{volatile} et \texttt{AtomicInteger}}
+
+\subsection{Question 5.1 — Arrêter proprement un thread (\texttt{Travailleur.java})}
+Sans \texttt{volatile}, le thread peut \textbf{ne jamais voir} que \texttt{actif} est
+passé à \texttt{false} (valeur mise en cache). Sur beaucoup de machines on lit alors
+\texttt{Le thread tourne encore !}. Le problème n'est pas garanti mais possible — ce
+qui le rend dangereux.
+
+\subsection{Question 5.2 — La correction}
+\begin{lstlisting}
+private volatile boolean actif = true;
+\end{lstlisting}
+Toute écriture de \texttt{actif} devient immédiatement visible par les autres threads :
+le thread s'arrête et le programme affiche \texttt{Le thread est bien arrêté} à chaque
+exécution (voir capture).
+
+\capture{ex5.png}{« Le thread est bien arrêté » avec \texttt{volatile}}
+
+\subsection{Question 5.3 — \texttt{volatile} ne suffit pas pour \texttt{++}}
+Avec \texttt{private volatile int vues = 0;} et \texttt{vues++}, le résultat est
+\textbf{faux} (< 200000). \texttt{volatile} garantit la \textbf{visibilité} mais
+\textbf{pas l'atomicité} : \texttt{vues++} = \emph{lire → +1 → écrire} (3 étapes).
+
+\subsection{Question 5.4 — \texttt{AtomicInteger}}
+\begin{lstlisting}
+import java.util.concurrent.atomic.AtomicInteger;
+private AtomicInteger vues = new AtomicInteger(0);
+public void nouvelleVue() { vues.incrementAndGet(); }
+public int getVues() { return vues.get(); }
+\end{lstlisting}
+\texttt{incrementAndGet()} est \textbf{atomique} : on obtient
+\texttt{Vues : 200000} à chaque exécution, sans aucun \texttt{synchronized} (voir capture).
+
+\capture{ex5b.png}{Compteur de vues avec \texttt{AtomicInteger} : 200000 (exact)}
+
+\subsection{Question 5.5 — Tableau récapitulatif}
+\begin{table}[H]\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Outil} & \textbf{Garantit la visibilité} & \textbf{Rend \texttt{c++} sûr} \\
+\midrule
+Rien & Non & Non \\
+\texttt{volatile} & Oui & Non \\
+\texttt{synchronized} & Oui & Oui \\
+\texttt{AtomicInteger} & Oui & Oui \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ================= EXERCICE 6 =================
+\section{ExecutorService, Callable et Future}
+
+\subsection{Question 6.1 — Un pool de 3 threads (\texttt{PoolSimple.java})}
+Les 6 tâches sont exécutées dans un ordre variable par les threads du pool (voir
+capture). \textbf{Combien de threads différents ?} \textbf{3}
+(\texttt{pool-1-thread-1}, \texttt{-2}, \texttt{-3}), réutilisés pour plusieurs
+tâches. \textbf{Si on oublie \texttt{pool.shutdown()} ?} Le programme \textbf{ne se
+termine jamais} (threads du pool non daemon en attente).
+
+\capture{ex6.png}{Un pool de 3 threads exécute 6 tâches}
+
+\subsection{Question 6.2 — Callable et Future (\texttt{SommeFuture.java})}
+\begin{lstlisting}
+Future<Long> f = pool.submit(somme);
+System.out.println("Résultat : " + f.get());
+\end{lstlisting}
+On obtient \texttt{Résultat : 500000500000} (\texttt{f.get()} est bloquant : il attend
+la fin du calcul avant d'afficher, voir capture).
+
+\capture{ex6b.png}{Résultat récupéré via \texttt{Future.get()} : 500000500000}
+
+\subsection{Question 6.3 — invokeAll (\texttt{SommeParallele.java})}
+Somme de 1 à 4\,000\,000 découpée en 4 morceaux.
+\begin{lstlisting}
+List<Future<Long>> resultats = pool.invokeAll(taches);
+long total = 0;
+for (Future<Long> f : resultats) {
+    total += f.get();
+}
+\end{lstlisting}
+On obtient \texttt{Total : 8000002000000} (voir capture).
+
+\capture{ex6c.png}{Somme parallèle via \texttt{invokeAll} : 8000002000000}
+
+\subsection{Question 6.4 — ScheduledExecutorService (\texttt{Bip.java})}
+\begin{lstlisting}
+ScheduledExecutorService pool = Executors.newScheduledThreadPool(1);
+pool.scheduleAtFixedRate(() -> System.out.println("Bip"), 0, 1, TimeUnit.SECONDS);
+Thread.sleep(5000);
+pool.shutdown();
+\end{lstlisting}
+Affiche \texttt{Bip} toutes les secondes pendant 5\,s, puis s'arrête (voir capture).
+
+\capture{ex6d.png}{« Bip » répété toutes les secondes pendant 5\,s}
+
+% ================= EXERCICE 7 =================
+\section{Le départ de la course}
+5 coureurs (5 threads) s'échauffent, attendent un signal commun, puis partent
+\textbf{en même temps}. L'arbitre (thread \texttt{main}) attend que tous soient prêts,
+donne le départ, puis attend l'arrivée de tous. Classes : \texttt{LigneDeDepart}
+(objet partagé), \texttt{Classement}, \texttt{Coureur} (thread), \texttt{Course}.
+
+\subsection{Étape 1 — \texttt{LigneDeDepart} (TODO 1 à 4)}
+\begin{lstlisting}
+public synchronized void seDeclarerPret(String nom) {
+    nbPrets++;
+    System.out.println(nom + " est prêt (" + nbPrets + "/" + nbCoureurs + ")");
+    notifyAll();                               // TODO 1
+}
+public synchronized void attendreTousPrets() throws InterruptedException {
+    while (nbPrets < nbCoureurs) { wait(); }   // TODO 2
+    System.out.println("Arbitre : tout le monde est prêt !");
+}
+public synchronized void donnerDepart() {
+    departDonne = true;
+    System.out.println(">>> PAN ! Départ ! <<<");
+    notifyAll();                               // TODO 3
+}
+public synchronized void attendreDepart() throws InterruptedException {
+    while (!departDonne) { wait(); }           // TODO 4
+}
+\end{lstlisting}
+
+\subsection{Étapes 3 et 4 — \texttt{Coureur} et \texttt{Course}}
+Points clés : \texttt{super(nom)} + initialisation des attributs ;
+\texttt{seDeclarerPret} puis \texttt{attendreDepart} ; dans \texttt{Course}, boucle
+\texttt{for} pour créer/démarrer les 5 coureurs, puis \texttt{join()} sur chacun.
+La capture ci-dessous montre un déroulement complet.
+\textbf{Vérifications :} aucun \texttt{s'élance} n'apparaît avant \texttt{PAN !} ; les 5
+\texttt{s'élance} apparaissent juste après ; les positions vont de 1 à 5 sans doublon ;
+\texttt{course terminée} s'affiche en dernier.
+
+\capture{ex7.png}{Déroulement complet de la course}
+
+\subsection{Étape 2 — Question sur \texttt{Classement}}
+Sans \texttt{synchronized} dans \texttt{arriver()}, deux coureurs arrivant en même
+temps pourraient lire la même \texttt{prochainePosition} → \textbf{doublon} et
+position sautée.
+
+\subsection{Étape 5 — Expériences}
+\begin{enumerate}[nosep]
+  \item \textbf{\texttt{notifyAll()} → \texttt{notify()} dans \texttt{donnerDepart()} :}
+  \texttt{notify()} ne réveille qu'\textbf{un seul} coureur ; les autres restent
+  bloqués, le \texttt{join()} ne se termine jamais → le programme ne se termine pas.
+  \item \textbf{Supprimer \texttt{attendreTousPrets()} dans \texttt{Course} :}
+  l'arbitre peut donner le départ avant que tous soient prêts. Les coureurs encore en
+  échauffement \textbf{ne sont pas bloqués pour toujours} : en arrivant, leur
+  \texttt{attendreDepart()} voit \texttt{departDonne == true} (grâce au \texttt{while})
+  et ils partent aussitôt.
+  \item \textbf{\texttt{while (!departDonne)} → \texttt{while (true)} :} la condition de
+  sortie disparaît ; chaque coureur reste \textbf{bloqué pour toujours} dans
+  \texttt{wait()} → la course ne démarre jamais.
+\end{enumerate}
+
+\subsection{Étape 6 — Comprendre les choix}
+\begin{enumerate}[nosep]
+  \item \textbf{Pourquoi \texttt{departDonne} est-il indispensable ?} C'est la
+  \textbf{condition d'état} qui mémorise que le départ a eu lieu. Sans elle, un coureur
+  qui fait \texttt{wait()} après un \texttt{notifyAll()} déjà passé attendrait un signal
+  qui ne reviendra jamais (réveil manqué).
+  \item \textbf{Pourquoi \texttt{while} et non \texttt{if} ?} À cause des réveils
+  intempestifs (\emph{spurious wakeups}) et des réveils multiples : au réveil il faut
+  \textbf{re-vérifier la condition}.
+  \item \textbf{Un coureur dans \texttt{wait()} consomme-t-il du CPU ?} \textbf{Non} :
+  \texttt{wait()} endort le thread et libère le verrou. Une attente active
+  \texttt{while (!departDonne) \{\}} occuperait un cœur à 100 \% inutilement.
+  \item \textbf{Pourquoi \texttt{notifyAll()} plutôt que \texttt{notify()} ?} Plusieurs
+  threads attendent sur le \textbf{même objet} ; \texttt{notify()} n'en réveillerait
+  qu'un (peut-être pas le bon), \texttt{notifyAll()} les réveille tous et chacun
+  re-teste sa condition.
+\end{enumerate}
+
+\subsection{La version moderne — \texttt{CountDownLatch} (bonus)}
+\texttt{LigneDeDepart} réécrite avec deux \texttt{CountDownLatch}, sans
+\texttt{synchronized}, \texttt{wait()} ni \texttt{notifyAll()} :
+\begin{lstlisting}
+private final CountDownLatch prets;            // new CountDownLatch(5)
+private final CountDownLatch depart = new CountDownLatch(1);
+// coureur prêt            : prets.countDown();
+// arbitre attend          : prets.await();
+// arbitre donne le départ : depart.countDown();
+// coureur attend le départ: depart.await();
+\end{lstlisting}
+Les classes \texttt{Coureur}, \texttt{Classement} et \texttt{Course} ne changent pas.
+Même comportement, code beaucoup plus simple.
+
+% ================= FAQ =================
+\section{FAQ — Erreurs fréquentes rencontrées}
+\begin{table}[H]\centering\small
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{p{4.6cm}p{4.3cm}p{4.3cm}}
+\toprule
+\textbf{Symptôme} & \textbf{Cause} & \textbf{Solution} \\
+\midrule
+\texttt{unreported exception InterruptedException} & \texttt{sleep/join/wait/get} lèvent une exception vérifiée & \texttt{throws InterruptedException} ou \texttt{try/catch} \\
+\texttt{IllegalThreadStateException} & \texttt{start()} appelé deux fois & créer un nouvel objet \texttt{Thread} \\
+\texttt{IllegalMonitorStateException} & \texttt{wait()/notifyAll()} hors d'un bloc \texttt{synchronized} & appeler dans une méthode \texttt{synchronized} \\
+variable non \texttt{final} dans une lambda & usage de \texttt{i} (variable de boucle) & copier avant : \texttt{int numero = i;} \\
+\texttt{ArrayIndexOutOfBoundsException} (3.1) & c'est le bug à observer & le noter dans le tableau \\
+Durée $\approx$ 0\,ms (ex. 1) & \texttt{join()} oublié & ajouter les \texttt{join()} \\
+Le programme ne s'arrête jamais & pool non arrêté / \texttt{notifyAll()} oublié & \texttt{shutdown()} / \texttt{notifyAll()} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ================= CONCLUSION =================
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+Ce TD a permis de manipuler les deux façons de créer des threads (\texttt{Runnable} et
+\texttt{extends Thread}), d'observer leur cycle de vie, et surtout de comprendre les
+\textbf{deux garanties distinctes} de la concurrence :
+\begin{itemize}[nosep]
+  \item la \textbf{visibilité} (\texttt{volatile}) — voir les écritures des autres threads ;
+  \item l'\textbf{atomicité} (\texttt{synchronized}, \texttt{AtomicInteger}) — rendre
+  indivisibles les opérations composées comme \texttt{c++} ou « vérifier puis ajouter ».
+\end{itemize}
+Les outils de haut niveau (\texttt{ExecutorService}, \texttt{Future},
+\texttt{CountDownLatch}) simplifient grandement l'écriture de code concurrent correct.
+
+\end{document}
